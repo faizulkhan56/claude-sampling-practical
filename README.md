@@ -34,6 +34,18 @@ Install `uv` if needed, then install dependencies:
 uv sync
 ```
 
+If `uv` is not installed on Windows PowerShell:
+
+```powershell
+irm https://astral.sh/uv/install.ps1 | iex
+```
+
+After installing `uv`, restart your terminal and check:
+
+```powershell
+uv --version
+```
+
 Set your OpenAI API key in your shell before running the client:
 
 ```powershell
@@ -47,6 +59,25 @@ $env:OPENAI_MODEL="gpt-5.4-mini"
 ```
 
 ## Run
+
+For a normal run with your OpenAI key:
+
+```powershell
+$env:OPENAI_API_KEY="your_api_key_here"
+$env:OPENAI_MODEL="gpt-5.4-mini"
+uv sync
+uv run client.py
+```
+
+If your account does not have access to `gpt-5.4-mini`, set any OpenAI model
+you do have access to:
+
+```powershell
+$env:OPENAI_MODEL="gpt-4o-mini"
+uv run client.py
+```
+
+After the first setup, you usually only need:
 
 ```bash
 uv run client.py
@@ -79,7 +110,7 @@ SamplingMessage(
 )
 ```
 
-The server sends MCP-native message objects, not Anthropic SDK dictionaries.
+The server sends MCP-native message objects, not OpenAI API dictionaries.
 
 ### 3. Sampling Callback
 
