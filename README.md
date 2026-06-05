@@ -2,7 +2,7 @@
 
 This project is a small practice implementation for the MCP advanced
 certification sampling concept. It uses an MCP server over STDIO and a Python
-client that handles sampling by calling Claude with the Anthropic SDK.
+client that handles sampling by calling OpenAI with the OpenAI SDK.
 
 ## What You Are Practicing
 
@@ -14,14 +14,14 @@ language model. The server does not call the model directly. Instead:
 3. The client calls the server tool named `summarize`.
 4. The server calls `ctx.session.create_message(...)`.
 5. The MCP client receives that sampling request.
-6. The client callback calls Claude.
+6. The client callback calls OpenAI.
 7. The client returns a `CreateMessageResult`.
 8. The server receives the generated text and returns it as the tool result.
 
 ## Files
 
 - `server.py`: Defines the MCP server and the `summarize` tool.
-- `client.py`: Starts the server, connects a sampling callback, calls Claude,
+- `client.py`: Starts the server, connects a sampling callback, calls OpenAI,
   and invokes the server tool.
 - `pyproject.toml`: Defines Python version and dependencies.
 - `.gitignore`: Ignores Python build files, virtual environments, and `.env`.
@@ -34,16 +34,16 @@ Install `uv` if needed, then install dependencies:
 uv sync
 ```
 
-Set your Anthropic API key in your shell before running the client:
+Set your OpenAI API key in your shell before running the client:
 
 ```powershell
-$env:ANTHROPIC_API_KEY="your_api_key_here"
+$env:OPENAI_API_KEY="your_api_key_here"
 ```
 
 You can optionally choose a model:
 
 ```powershell
-$env:ANTHROPIC_MODEL="claude-sonnet-4-20250514"
+$env:OPENAI_MODEL="gpt-5.4-mini"
 ```
 
 ## Run
@@ -52,7 +52,7 @@ $env:ANTHROPIC_MODEL="claude-sonnet-4-20250514"
 uv run client.py
 ```
 
-Expected result: the client prints a text content object containing Claude's
+Expected result: the client prints a text content object containing OpenAI's
 summary of the sample text.
 
 ## Step-by-Step Concept Check
@@ -102,9 +102,19 @@ messages.append({"role": "user", "content": content})
 ```
 
 This converts MCP `SamplingMessage` objects into the format expected by the
-Anthropic SDK.
+OpenAI Responses API.
 
-### 5. Returning Generated Text
+### 5. Calling OpenAI
+
+Check `client.py`:
+
+```python
+response = await openai_client.responses.create(...)
+```
+
+This is where the MCP client sends the sampling request to OpenAI.
+
+### 6. Returning Generated Text
 
 Check `client.py`:
 
@@ -112,9 +122,9 @@ Check `client.py`:
 return CreateMessageResult(...)
 ```
 
-The callback wraps Claude's text response back into an MCP-compatible result.
+The callback wraps OpenAI's text response back into an MCP-compatible result.
 
-### 6. Connecting the Callback
+### 7. Connecting the Callback
 
 Check `client.py`:
 
@@ -125,7 +135,7 @@ ClientSession(read, write, sampling_callback=sampling_callback)
 Without this callback, the server's `create_message(...)` request cannot be
 handled.
 
-### 7. Getting the Final Tool Result
+### 8. Getting the Final Tool Result
 
 Check `client.py`:
 
@@ -154,5 +164,5 @@ Then experiment:
    sampling request cannot complete.
 4. Add `print(params.messages)` inside `sampling_callback` to see the MCP
    message format.
-5. Add `print(messages)` before `anthropic_client.messages.create(...)` to see
-   the Anthropic SDK message format.
+5. Add `print(messages)` before `openai_client.responses.create(...)` to see
+   the OpenAI API message format.

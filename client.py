@@ -1,7 +1,6 @@
 import asyncio
 import os
 
-from anthropic import AsyncAnthropic
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.session import RequestContext
 from mcp.client.stdio import stdio_client
@@ -11,9 +10,10 @@ from mcp.types import (
     SamplingMessage,
     TextContent,
 )
+from openai import AsyncOpenAI
 
-anthropic_client = AsyncAnthropic()
-model = os.getenv("ANTHROPIC_MODEL", "claude-sonnet-4-20250514")
+openai_client = AsyncOpenAI()
+model = os.getenv("OPENAI_MODEL", "gpt-5.4-mini")
 
 server_params = StdioServerParameters(
     command="uv",
@@ -21,7 +21,11 @@ server_params = StdioServerParameters(
 )
 
 
-async def chat(input_messages: list[SamplingMessage], max_tokens=4000):
+async def chat(
+    input_messages: list[SamplingMessage],
+    max_tokens=4000,
+    system_prompt: str | None = None,
+):
     messages = []
     for msg in input_messages:
         if msg.role == "user" and msg.content.type == "text":
@@ -39,21 +43,30 @@ async def chat(input_messages: list[SamplingMessage], max_tokens=4000):
             )
             messages.append({"role": "assistant", "content": content})
 
-    response = await anthropic_client.messages.create(
+    response = await openai_client.responses.create(
         model=model,
-        messages=messages,
-        max_tokens=max_tokens,
+        input=messages,
+        instructions=system_prompt,
+        max_output_tokens=max_tokens,
     )
 
-    text = "".join([p.text for p in response.content if p.type == "text"])
-    return text
+    return response.output_text
 
 
 async def sampling_callback(
     context: RequestContext, params: CreateMessageRequestParams
 ):
-    # Call Claude using the Anthropic SDK.
-    text = await chat(params.messages)
+    # Call OpenAI using the OpenAI SDK.
+    system_prompt = (
+        getattr(params, "system_prompt", None)
+        or getattr(params, "systemPrompt", None)
+    )
+    max_tokens = (
+        getattr(params, "max_tokens", None)
+        or getattr(params, "maxTokens", None)
+        or 4000
+    )
+    text = await chat(params.messages, max_tokens, system_prompt)
 
     return CreateMessageResult(
         role="assistant",
