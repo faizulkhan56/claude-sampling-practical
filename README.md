@@ -46,7 +46,28 @@ After installing `uv`, restart your terminal and check:
 uv --version
 ```
 
-Set your OpenAI API key in your shell before running the client:
+### Git Bash Environment Variables
+
+If you are using Git Bash on Windows, set environment variables with `export`:
+
+```bash
+export OPENAI_API_KEY="your_api_key_here"
+export OPENAI_MODEL="gpt-4o-mini"
+```
+
+Then run:
+
+```bash
+uv sync
+uv run client.py
+```
+
+Keep your API key private. Do not commit it, paste it into code, or write it in
+`README.md`.
+
+### PowerShell Environment Variables
+
+If you are using Windows PowerShell, use `$env:`:
 
 ```powershell
 $env:OPENAI_API_KEY="your_api_key_here"
@@ -62,18 +83,28 @@ $env:OPENAI_MODEL="gpt-5.4-mini"
 
 For a normal run with your OpenAI key:
 
-```powershell
-$env:OPENAI_API_KEY="your_api_key_here"
-$env:OPENAI_MODEL="gpt-5.4-mini"
+Git Bash:
+
+```bash
+export OPENAI_API_KEY="your_api_key_here"
+export OPENAI_MODEL="gpt-4o-mini"
 uv sync
 uv run client.py
 ```
 
-If your account does not have access to `gpt-5.4-mini`, set any OpenAI model
-you do have access to:
+PowerShell:
 
 ```powershell
+$env:OPENAI_API_KEY="your_api_key_here"
 $env:OPENAI_MODEL="gpt-4o-mini"
+uv sync
+uv run client.py
+```
+
+If you want to try another OpenAI model, change only `OPENAI_MODEL`:
+
+```bash
+export OPENAI_MODEL="gpt-5.4-mini"
 uv run client.py
 ```
 
@@ -85,6 +116,15 @@ uv run client.py
 
 Expected result: the client prints a text content object containing OpenAI's
 summary of the sample text.
+
+With debug prints enabled, you should also see:
+
+```text
+MCP sampling request:
+...
+OpenAI messages:
+...
+```
 
 ## Step-by-Step Concept Check
 
@@ -178,6 +218,224 @@ print(result.content)
 The client calls the MCP tool, the server performs sampling, and the final
 generated text is returned as the tool output.
 
+## Theory: How The Code Calls Each Other
+
+The easiest way to understand this project is to follow the request path.
+
+### 1. `client.py` starts `server.py`
+
+In `client.py`:
+
+```python
+server_params = StdioServerParameters(
+    command="uv",
+    args=["run", "server.py"],
+)
+```
+
+This means the client will start the MCP server by running:
+
+```bash
+uv run server.py
+```
+
+The client and server communicate through STDIO.
+
+### 2. `client.py` connects the sampling callback
+
+In `client.py`:
+
+```python
+async with ClientSession(
+    read, write, sampling_callback=sampling_callback
+) as session:
+```
+
+This is very important. It tells MCP:
+
+When the server asks for sampling, call `sampling_callback`.
+
+Without this callback, the server can ask for sampling, but the client will not
+know how to call the LLM.
+
+### 3. `client.py` calls the MCP tool
+
+In `client.py`:
+
+```python
+result = await session.call_tool(
+    name="summarize",
+    arguments={"text_to_summarize": "..."},
+)
+```
+
+This calls the `summarize` tool from `server.py`.
+
+### 4. `server.py` receives the tool call
+
+In `server.py`:
+
+```python
+@mcp.tool()
+async def summarize(text_to_summarize: str, ctx: Context):
+```
+
+This function runs when the client calls:
+
+```python
+session.call_tool(name="summarize", ...)
+```
+
+The `ctx` object lets the server talk back to the MCP client.
+
+### 5. `server.py` asks for sampling
+
+In `server.py`:
+
+```python
+result = await ctx.session.create_message(
+    messages=[
+        SamplingMessage(
+            role="user",
+            content=TextContent(type="text", text=prompt),
+        )
+    ],
+    max_tokens=4000,
+    system_prompt="You are a helpful research assistant.",
+)
+```
+
+This is the main sampling line.
+
+The server is saying:
+
+```text
+Client, please ask an LLM to answer this prompt.
+```
+
+The server does not use `OPENAI_API_KEY`. The client owns the API key.
+
+### 6. `client.py` receives the sampling request
+
+In `client.py`:
+
+```python
+async def sampling_callback(
+    context: RequestContext, params: CreateMessageRequestParams
+):
+```
+
+This function receives the sampling request from `server.py`.
+
+The debug prints show what arrived from the server:
+
+```python
+print("MCP sampling request:")
+print(params.messages)
+```
+
+When you run the project, this helps you see the MCP-native message format.
+
+### 7. `client.py` converts MCP messages to OpenAI messages
+
+In `client.py`:
+
+```python
+messages.append({"role": "user", "content": content})
+```
+
+MCP sends `SamplingMessage` objects. OpenAI expects message dictionaries. This
+conversion step changes the message format.
+
+The debug prints show the converted OpenAI format:
+
+```python
+print("OpenAI messages:")
+print(messages)
+```
+
+### 8. `client.py` calls OpenAI
+
+In `client.py`:
+
+```python
+response = await openai_client.responses.create(
+    model=model,
+    input=messages,
+    instructions=system_prompt,
+    max_output_tokens=max_tokens,
+)
+```
+
+This is where your `OPENAI_API_KEY` is used. The key is read automatically by
+the OpenAI SDK from the environment variable:
+
+```bash
+OPENAI_API_KEY
+```
+
+### 9. `client.py` returns the result to `server.py`
+
+In `client.py`:
+
+```python
+return CreateMessageResult(
+    role="assistant",
+    model=model,
+    content=TextContent(type="text", text=text),
+)
+```
+
+The client wraps the OpenAI output in an MCP-compatible result.
+
+### 10. `server.py` returns the final tool output
+
+In `server.py`:
+
+```python
+if result.content.type == "text":
+    return result.content.text
+```
+
+The server receives the text from the client and returns it as the final result
+of the `summarize` tool.
+
+Full flow:
+
+```text
+client.py starts server.py
+client.py calls summarize tool
+server.py runs summarize
+server.py calls ctx.session.create_message
+client.py sampling_callback receives request
+client.py calls OpenAI
+client.py returns CreateMessageResult
+server.py returns final text
+client.py prints result.content
+```
+
+## Debug Practice
+
+The project already includes these debug prints in `client.py`.
+
+Inside `sampling_callback`:
+
+```python
+print("MCP sampling request:")
+print(params.messages)
+```
+
+This shows what `server.py` sends to `client.py`.
+
+Inside `chat`, before the OpenAI API call:
+
+```python
+print("OpenAI messages:")
+print(messages)
+```
+
+This shows how MCP messages are converted into OpenAI message format.
+
 ## Test Checklist
 
 Run these checks while studying:
@@ -193,7 +451,7 @@ Then experiment:
 2. Change `system_prompt` in `server.py` and observe the response style.
 3. Temporarily remove `sampling_callback=sampling_callback` and confirm the
    sampling request cannot complete.
-4. Add `print(params.messages)` inside `sampling_callback` to see the MCP
-   message format.
-5. Add `print(messages)` before `openai_client.responses.create(...)` to see
-   the OpenAI API message format.
+4. Check the `MCP sampling request:` debug output to see the MCP message
+   format.
+5. Check the `OpenAI messages:` debug output to see the OpenAI API message
+   format.

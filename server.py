@@ -7,7 +7,7 @@ mcp = FastMCP(name="Demo Server")
 @mcp.tool()
 async def summarize(text_to_summarize: str, ctx: Context):
     prompt = f"""
-        Please summarize the following text:
+        Please summarize the following text in 3 bullet points:
         {text_to_summarize}
     """
 
@@ -18,7 +18,7 @@ async def summarize(text_to_summarize: str, ctx: Context):
             )
         ],
         max_tokens=4000,
-        system_prompt="You are a helpful research assistant.",
+        system_prompt="You are a strict technical teacher. Explain simply.",
     )
 
     if result.content.type == "text":

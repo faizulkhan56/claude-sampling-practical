@@ -13,7 +13,7 @@ from mcp.types import (
 from openai import AsyncOpenAI
 
 openai_client = AsyncOpenAI()
-model = os.getenv("OPENAI_MODEL", "gpt-5.4-mini")
+model = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
 
 server_params = StdioServerParameters(
     command="uv",
@@ -43,6 +43,9 @@ async def chat(
             )
             messages.append({"role": "assistant", "content": content})
 
+    print("OpenAI messages:")
+    print(messages)
+
     response = await openai_client.responses.create(
         model=model,
         input=messages,
@@ -56,6 +59,9 @@ async def chat(
 async def sampling_callback(
     context: RequestContext, params: CreateMessageRequestParams
 ):
+    print("MCP sampling request:")
+    print(params.messages)
+
     # Call OpenAI using the OpenAI SDK.
     system_prompt = (
         getattr(params, "system_prompt", None)
@@ -86,9 +92,28 @@ async def run():
                 name="summarize",
                 arguments={
                     "text_to_summarize": (
-                        "MCP sampling lets a server request language-model "
-                        "completion through the client. The client remains in "
-                        "control of model access, credentials, and approval."
+                        "MCP sampling is a capability in the Model Context "
+                        "Protocol that allows an MCP server to request "
+                        "language-model completion through the connected "
+                        "client instead of calling the model directly. This is "
+                        "important because the server does not need to own or "
+                        "manage model credentials, API keys, billing access, "
+                        "or provider-specific configuration. Instead, the "
+                        "client acts as the trusted control point and decides "
+                        "whether the sampling request should be approved, "
+                        "which model should be used, and how the final "
+                        "response should be returned. This design keeps the "
+                        "user or host application in control of model access "
+                        "while still allowing servers to build intelligent "
+                        "features such as summarization, rewriting, "
+                        "classification, planning, or context-aware "
+                        "assistance. In practical terms, MCP sampling makes it "
+                        "possible for a tool server to ask for AI help without "
+                        "becoming an AI provider itself. It also improves "
+                        "security because sensitive credentials remain with "
+                        "the client, and every sampling request can be "
+                        "reviewed, approved, blocked, or modified based on "
+                        "the client's policy."
                     )
                 },
             )
