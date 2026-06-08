@@ -455,3 +455,66 @@ Then experiment:
    format.
 5. Check the `OpenAI messages:` debug output to see the OpenAI API message
    format.
+
+## Full Flow In One Picture
+
+```text
+Git Bash
+export OPENAI_API_KEY
+export OPENAI_MODEL
+uv run client.py
+        ↓
+client.py starts
+        ↓
+asyncio.run(run())
+        ↓
+stdio_client(server_params)
+        ↓
+starts: uv run server.py
+        ↓
+server.py starts MCP server with stdio
+        ↓
+ClientSession(read, write, sampling_callback=...)
+        ↓
+session.initialize()
+        ↓
+client calls server tool: summarize
+        ↓
+server.py summarize() runs
+        ↓
+server.py creates prompt
+        ↓
+server.py calls ctx.session.create_message(...)
+        ↓
+MCP sends sampling request to client
+        ↓
+client.py sampling_callback(context, params) runs
+        ↓
+params.messages contains server prompt
+        ↓
+chat(params.messages, max_tokens, system_prompt)
+        ↓
+chat converts MCP messages to OpenAI messages
+        ↓
+openai_client.responses.create(...)
+        ↓
+OpenAI returns answer
+        ↓
+client returns CreateMessageResult to server
+        ↓
+server returns result.content.text
+        ↓
+client receives tool result
+        ↓
+print(result.content)
+```
+
+The heart of the concept is this:
+
+```text
+Client calls server tool.
+Server tool asks client to call LLM.
+Client calls OpenAI.
+Client returns LLM answer to server.
+Server returns final tool result to client.
+```
